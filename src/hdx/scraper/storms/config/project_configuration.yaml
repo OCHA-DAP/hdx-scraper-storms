@@ -1,1 +1,4 @@
 # Collector specific configuration
+tags:
+  - climate-weather
+  - cyclones-hurricanes-typhoons

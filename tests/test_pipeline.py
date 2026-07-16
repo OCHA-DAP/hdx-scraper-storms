@@ -1,26 +1,17 @@
-from os.path import join
-
-import pytest
-from hdx.api.configuration import Configuration
-from hdx.scraper.storms.pipeline import Pipeline
 from hdx.utilities.downloader import Download
 from hdx.utilities.path import temp_dir
 from hdx.utilities.retriever import Retrieve
-from hdx.utilities.useragent import UserAgent
+
+from hdx.scraper.storms.pipeline import Pipeline
 
 
 class TestPipeline:
-    def test_pipeline(
-        self,
-        configuration,
-        fixtures_dir,
-        input_dir,
-        config_dir
+    def test_generate_dataset_with_exposure(
+        self, configuration, input_dir, config_dir, mock_exposure_fetchers
     ):
+        """ARTHUR (AL012026): real captured exposure, admin0 + admin1 rows."""
         with temp_dir(
-            "TestStorms",
-            delete_on_success=True,
-            delete_on_failure=False,
+            "TestStormsArthur", delete_on_success=True, delete_on_failure=False
         ) as tempdir:
             with Download(user_agent="test") as downloader:
                 retriever = Retrieve(
@@ -31,8 +22,37 @@ class TestPipeline:
                     save=False,
                     use_saved=True,
                 )
-                pipeline = Pipeline(configuration, retriever, tempdir)
-                dataset = pipeline.generate_dataset()
-                dataset.update_from_yaml(
-                    path=join(config_dir, "hdx_dataset_static.yaml")
+                pipeline = Pipeline(configuration, retriever, tempdir, engine=None)
+                dataset = pipeline.generate_dataset("AL012026", "ARTHUR", 2026)
+
+        assert dataset is not None
+        assert dataset["name"] == "storm-arthur-2026-al012026"
+        assert dataset["title"] == "Arthur (2026) - Storm Population Exposure"
+        assert {t["name"] for t in dataset["tags"]} == {
+            "climate-weather",
+            "cyclones-hurricanes-typhoons",
+        }
+        resources = dataset.get_resources()
+        assert len(resources) == 1
+        assert resources[0]["name"] == "storm-arthur-2026-al012026.csv"
+
+    def test_generate_dataset_skips_zero_exposure(
+        self, configuration, input_dir, config_dir, mock_exposure_fetchers
+    ):
+        """AMANDA (EP012026): no positive exposure anywhere -> no dataset published."""
+        with temp_dir(
+            "TestStormsAmanda", delete_on_success=True, delete_on_failure=False
+        ) as tempdir:
+            with Download(user_agent="test") as downloader:
+                retriever = Retrieve(
+                    downloader=downloader,
+                    fallback_dir=tempdir,
+                    saved_dir=input_dir,
+                    temp_dir=tempdir,
+                    save=False,
+                    use_saved=True,
                 )
+                pipeline = Pipeline(configuration, retriever, tempdir, engine=None)
+                dataset = pipeline.generate_dataset("EP012026", "AMANDA", 2026)
+
+        assert dataset is None

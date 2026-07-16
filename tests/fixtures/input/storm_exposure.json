@@ -1,0 +1,160 @@
+{
+  "AL012026": {
+    "issued_time": "2026-06-18T03:00:00",
+    "storm_iso3s": [
+      "USA"
+    ],
+    "fcast_exposure": [],
+    "obsv_exposure": [
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "wind_speed_kt": 34,
+        "pop_exposed": 7410046
+      }
+    ],
+    "gdacs_exposure": [
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "wind_speed_kt": 34,
+        "pop_exposed": 15807645
+      }
+    ],
+    "adam_exposure": [
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "wind_speed_kt": 34,
+        "pop_exposed": 14688988
+      }
+    ],
+    "fcast_exposure_adm1": [],
+    "obsv_exposure_adm1": [
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "fm_pcode": "USA-20230119-22",
+        "wind_speed_kt": 34,
+        "pop_exposed": 624
+      },
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "fm_pcode": "USA-20230119-48",
+        "wind_speed_kt": 34,
+        "pop_exposed": 7409423
+      }
+    ],
+    "gdacs_exposure_adm1": [
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "fm_pcode": "USA-20230119-22",
+        "wind_speed_kt": 34,
+        "pop_exposed": 307337,
+        "n_gdacs_admins": 1,
+        "gdacs_admins": "USA-LOU",
+        "caveat_note": null
+      },
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "fm_pcode": "USA-20230119-48",
+        "wind_speed_kt": 34,
+        "pop_exposed": 15500307,
+        "n_gdacs_admins": 1,
+        "gdacs_admins": "USA-TEX",
+        "caveat_note": null
+      }
+    ],
+    "adam_exposure_adm1": [
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "fm_pcode": "USA-20230119-22",
+        "wind_speed_kt": 34,
+        "pop_exposed": 347142,
+        "n_adam_admins": 1,
+        "adam_admins": "Louisiana",
+        "caveat_note": null
+      },
+      {
+        "atcf_id": "AL012026",
+        "iso3": "USA",
+        "fm_pcode": "USA-20230119-48",
+        "wind_speed_kt": 34,
+        "pop_exposed": 14341846,
+        "n_adam_admins": 1,
+        "adam_admins": "Texas",
+        "caveat_note": null
+      }
+    ],
+    "fm_names": {
+      "USA-20230119-28": "Mississippi",
+      "USA-20230119-51": "Vermont",
+      "USA-20230119-47": "Tennessee",
+      "USA-20230119-12": "Florida",
+      "USA-20230119-36": "New York",
+      "USA-20230119-18": "Indiana",
+      "USA-20230119-42": "Pennsylvania",
+      "USA-20230119-53": "Washington",
+      "USA-20230119-26": "Michigan",
+      "USA-20230119-44": "Rhode Island",
+      "USA-20230119-20": "Kansas",
+      "USA-20230119-34": "New Jersey",
+      "USA-20230119-35": "New Mexico",
+      "USA-20230119-33": "New Hampshire",
+      "USA-20230119-16": "Idaho",
+      "USA-20230119-54": "West Virginia",
+      "USA-20230119-56": "Wyoming",
+      "USA-20230119-11": "District of Columbia",
+      "USA-20230119-46": "South Dakota",
+      "USA-20230119-15": "Hawaii",
+      "USA-20230119-48": "Texas",
+      "USA-20230119-55": "Wisconsin",
+      "USA-20230119-31": "Nebraska",
+      "USA-20230119-13": "Georgia",
+      "USA-20230119-21": "Kentucky",
+      "USA-20230119-37": "North Carolina",
+      "USA-20230119-23": "Maine",
+      "USA-20230119-10": "Delaware",
+      "USA-20230119-27": "Minnesota",
+      "USA-20230119-01": "Alabama",
+      "USA-20230119-40": "Oklahoma",
+      "USA-20230119-29": "Missouri",
+      "USA-20230119-05": "Arkansas",
+      "USA-20230119-09": "Connecticut",
+      "USA-20230119-25": "Massachusetts",
+      "USA-20230119-41": "Oregon",
+      "USA-20230119-19": "Iowa",
+      "USA-20230119-04": "Arizona",
+      "USA-20230119-38": "North Dakota",
+      "USA-20230119-24": "Maryland",
+      "USA-20230119-17": "Illinois",
+      "USA-20230119-22": "Louisiana",
+      "USA-20230119-45": "South Carolina",
+      "USA-20230119-06": "California",
+      "USA-20230119-52": "Virginia",
+      "USA-20230119-39": "Ohio",
+      "USA-20230119-30": "Montana",
+      "USA-20230119-02": "Alaska",
+      "USA-20230119-07": "Colorado",
+      "USA-20230119-50": "Utah",
+      "USA-20230119-32": "Nevada"
+    }
+  },
+  "EP012026": {
+    "issued_time": "2026-06-08T03:00:00",
+    "storm_iso3s": [],
+    "fcast_exposure": [],
+    "obsv_exposure": [],
+    "gdacs_exposure": [],
+    "adam_exposure": [],
+    "fcast_exposure_adm1": [],
+    "obsv_exposure_adm1": [],
+    "gdacs_exposure_adm1": [],
+    "adam_exposure_adm1": [],
+    "fm_names": {}
+  }
+}

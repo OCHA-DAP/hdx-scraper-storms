@@ -16,6 +16,8 @@ dependencies = [
   "hdx-python-api",
   "hdx-python-country",
   "hdx-python-utilities",
+  "ocha-stratus>=0.1.8",
+  "pandas>=3.0.3",
 ]
 readme = "README.md"
 

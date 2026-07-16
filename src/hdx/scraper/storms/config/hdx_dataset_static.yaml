@@ -7,4 +7,3 @@ private: False
 maintainer: hdx
 owner_org:  hdx
 data_update_frequency: Every day
-notes: Population exposure estimates per storm, blending NHC forecast/observed tracks with GDACS and ADAM sources, at admin0 and admin1 level.
