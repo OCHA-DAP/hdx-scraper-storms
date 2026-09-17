@@ -59,3 +59,62 @@ class TestPipeline:
                 dataset = pipeline.generate_dataset("EP012026", "AMANDA", 2026)
 
         assert dataset is None
+
+    def test_generate_dataset_no_track_data(self, configuration, monkeypatch):
+        from hdx.scraper.storms import pipeline as pl
+
+        monkeypatch.setattr(pl, "get_latest_issued_time", lambda engine, ids: {})
+        pipeline = Pipeline(configuration, None, None, engine=None)
+        assert pipeline.generate_dataset("AL012026", "ARTHUR", 2026) is None
+
+    def test_generate_dataset_unknown_country(
+        self, configuration, mock_exposure_fetchers, monkeypatch
+    ):
+        from hdx.data.dataset import Dataset
+        from hdx.data.hdxobject import HDXError
+
+        def _raise(self, iso3s):
+            raise HDXError("bad location")
+
+        monkeypatch.setattr(Dataset, "add_country_locations", _raise)
+        with temp_dir(
+            "TestStormsBadLoc", delete_on_success=True, delete_on_failure=False
+        ) as tempdir:
+            pipeline = Pipeline(configuration, None, tempdir, engine=None)
+            assert pipeline.generate_dataset("AL012026", "ARTHUR", 2026) is None
+
+    def test_generate_dataset_unknown_basin_and_final_alert(
+        self, configuration, monkeypatch
+    ):
+        from datetime import datetime
+
+        from hdx.scraper.storms import pipeline as pl
+        from hdx.scraper.storms.exposure import _CSV_COLS
+
+        row = dict.fromkeys(_CSV_COLS, "")
+        row.update(
+            atcf_id="XX012026",
+            admin_level=0,
+            iso3="NIC",
+            country_name="Nicaragua",
+            admin_name="Nicaragua",
+            is_final_alert=True,
+            pop_exposed_34kt=10,
+        )
+        monkeypatch.setattr(
+            pl,
+            "get_latest_issued_time",
+            lambda engine, ids: {"XX012026": datetime(2026, 6, 1)},
+        )
+        monkeypatch.setattr(pl, "build_storm_rows", lambda engine, aid, t: [row])
+        with temp_dir(
+            "TestStormsBasin", delete_on_success=True, delete_on_failure=False
+        ) as tempdir:
+            pipeline = Pipeline(configuration, None, tempdir, engine=None)
+            dataset = pipeline.generate_dataset("XX012026", None, 2026)
+
+        assert dataset["name"] == "storm-xx012026-2026-xx012026"
+        assert dataset["title"] == (
+            "Nicaragua - Storm Population Exposure, Xx012026 (2026)"
+        )
+        assert dataset["data_update_frequency"] == "-1"
