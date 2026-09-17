@@ -178,6 +178,13 @@ def mock_exposure_fetchers(monkeypatch, storm_fixtures):
         "fetch_fm_names",
         lambda engine, iso3s: _fm_names_for(storm_fixtures, iso3s),
     )
+    monkeypatch.setattr(
+        ex,
+        "fetch_prev_fcast_iso3s",
+        lambda engine, atcf_id, issued_time: set(
+            storm_fixtures[atcf_id].get("prev_fcast_iso3s", [])
+        ),
+    )
 
     def _get_latest_issued_time(engine, atcf_ids):
         return {

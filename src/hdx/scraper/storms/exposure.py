@@ -1,16 +1,20 @@
 """Per-storm population-exposure computation.
 
-Adapted from ds-storms-alerts's generate_exposure_csv (blends NHC forecast/
-observed tracks with GDACS and ADAM sources, at admin0 and admin1 level).
-The original computes exposure for every storm active at one alert's
-issued_time; here each storm is evaluated independently at its own latest
-available issued_time (see pipeline.get_latest_issued_time), since this
-pipeline publishes one dataset per storm for the whole season rather than
-one alert email per advisory.
+Adapted from ds-storms-alerts's generate_exposure_workbook (blends NHC
+forecast/observed tracks with GDACS and ADAM sources, at admin0 and admin1
+level). The original computes exposure for every storm active at one alert's
+issued_time and compares against a fixed prior advisory window to detect a
+storm's final update for a country; here each storm is evaluated
+independently at its own latest available issued_time (see
+pipeline.get_latest_issued_time), since this pipeline publishes one dataset
+per storm for the whole season rather than one alert email per advisory —
+so `is_final_alert` is computed against that storm's own previous advisory
+instead of a shared window across storms.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -18,6 +22,8 @@ from hdx.location.country import Country
 from sqlalchemy import Engine, bindparam, text
 
 from hdx.scraper.storms import fm_matching as fm
+
+logger = logging.getLogger(__name__)
 
 _ADMIN_LEVEL = 0
 _ADMIN_LEVEL_1 = 1
@@ -27,11 +33,12 @@ _ISSUED_OFFSET_HOURS = 3
 _SRC_LABELS = {"our": "CHD", "ADAM": "ADAM", "GDACS": "GDACS"}
 
 _CSV_COLS = [
+    "atcf_id",
     "admin_level",
-    "country",
     "iso3",
-    "pcode",
-    "adm1_name",
+    "country_name",
+    "admin_pcode",
+    "admin_name",
     "is_final_alert",
     "pop_exposed_34kt",
     "pop_exposed_50kt",
@@ -151,6 +158,42 @@ def fetch_adam_current_exposure(
             },
         )
         return pd.DataFrame(result.fetchall(), columns=list(result.keys()))
+
+
+def fetch_prev_fcast_iso3s(
+    engine: Engine, atcf_id: str, issued_time: datetime
+) -> set[str]:
+    """iso3s with positive forecast exposure at this storm's own previous
+    (second-most-recent) issued_time, i.e. the latest forecast issuance
+    strictly before `issued_time`. Used to detect a country dropping out of
+    the forecast footprint between one advisory and the next (see
+    `is_final_alert` in build_storm_rows)."""
+    sql = text("""
+        WITH prev_time AS (
+            SELECT MAX(issued_time) AS prev_time
+            FROM storms.nhc_tracks_fcastonly_exposure
+            WHERE atcf_id = :atcf_id
+              AND issued_time < :issued_time
+              AND admin_level = :admin_level
+              AND pop_exposed > 0
+        )
+        SELECT DISTINCT e.iso3
+        FROM storms.nhc_tracks_fcastonly_exposure e, prev_time p
+        WHERE e.atcf_id = :atcf_id
+          AND e.issued_time = p.prev_time
+          AND e.admin_level = :admin_level
+          AND e.pop_exposed > 0
+    """)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {
+                "atcf_id": atcf_id,
+                "issued_time": issued_time,
+                "admin_level": _ADMIN_LEVEL,
+            },
+        ).fetchall()
+    return {r[0] for r in rows}
 
 
 # ── admin-1 fetchers ─────────────────────────────────────────────────────
@@ -363,6 +406,7 @@ def fetch_storm_countries(
 def _build_adm1_rows(
     atcf_id: str,
     storm_iso3s: set[str],
+    final_iso3s: set[str],
     iso3_to_name: dict[str, str],
     fm_name_by_pcode: dict[str, str],
     fcast_adm1_df: pd.DataFrame,
@@ -422,12 +466,13 @@ def _build_adm1_rows(
     out: list[dict] = []
     for iso3, pcode in sorted(adm1_keys):
         row: dict = {
+            "atcf_id": atcf_id,
             "admin_level": 1,
-            "country": iso3_to_name.get(iso3, iso3),
             "iso3": iso3,
-            "pcode": pcode,
-            "adm1_name": fm_name_by_pcode.get(pcode, pcode),
-            "is_final_alert": False,
+            "country_name": iso3_to_name.get(iso3, iso3),
+            "admin_pcode": pcode,
+            "admin_name": fm_name_by_pcode.get(pcode, pcode),
+            "is_final_alert": iso3 in final_iso3s,
         }
         any_value = False
         for wsp in _WIND_SPEEDS_KT:
@@ -437,7 +482,7 @@ def _build_adm1_rows(
             unit_val = max(vals[k] for k in ordered) if ordered else 0
             row[f"pop_exposed_{wsp}kt"] = unit_val
             row[f"sources_{wsp}kt"] = (
-                ",".join(_SRC_LABELS[k] for k in ordered) if unit_val > 0 else ""
+                "|".join(_SRC_LABELS[k] for k in ordered) if unit_val > 0 else ""
             )
             cavs = [
                 c
@@ -471,15 +516,28 @@ def build_storm_rows(engine: Engine, atcf_id: str, issued_time: datetime) -> lis
         sub = obsv_df[(obsv_df["iso3"] == iso3) & (obsv_df["wind_speed_kt"] == wsp)]
         return int(sub["pop_exposed"].sum()) if not sub.empty else 0
 
+    # A country is a "final alert": it had a forecast at this storm's previous
+    # advisory but not at the latest one, yet still has current (observed)
+    # exposure to report — the storm no longer threatens it but its cumulative
+    # impact is final.
+    current_fcast_iso3s = set(fcast_df["iso3"]) if not fcast_df.empty else set()
+    prev_fcast_iso3s = fetch_prev_fcast_iso3s(engine, atcf_id, issued_time)
+    final_iso3s = {
+        iso3
+        for iso3 in prev_fcast_iso3s - current_fcast_iso3s
+        if any(_obsv(iso3, wsp) > 0 for wsp in _WIND_SPEEDS_KT)
+    }
+
     rows: list[dict] = []
     for iso3 in storm_iso3s:
         row: dict = {
+            "atcf_id": atcf_id,
             "admin_level": 0,
-            "country": iso3_to_name.get(iso3, iso3),
             "iso3": iso3,
-            "pcode": "",
-            "adm1_name": "",
-            "is_final_alert": False,
+            "country_name": iso3_to_name.get(iso3, iso3),
+            "admin_pcode": "",
+            "admin_name": iso3_to_name.get(iso3, iso3),
+            "is_final_alert": iso3 in final_iso3s,
         }
         for wsp in _WIND_SPEEDS_KT:
             tr = fcast_df[
@@ -507,7 +565,7 @@ def build_storm_rows(engine: Engine, atcf_id: str, issued_time: datetime) -> lis
             }
             row[f"pop_exposed_{wsp}kt"] = max(active.values()) if active else 0
             row[f"sources_{wsp}kt"] = (
-                ",".join(_SRC_LABELS.get(k, k) for k in active) if active else ""
+                "|".join(_SRC_LABELS.get(k, k) for k in active) if active else ""
             )
             row[f"caveat_{wsp}kt"] = ""
         rows.append(row)
@@ -518,10 +576,31 @@ def build_storm_rows(engine: Engine, atcf_id: str, issued_time: datetime) -> lis
     adam_adm1_df = fetch_adam_current_exposure_adm1(engine, atcf_id, issued_time)
     fm_name_by_pcode = fetch_fm_names(engine, storm_iso3s)
 
+    # GDACS adm1 units with no FieldMaps match arrive as fm_pcode=NaN "orphan"
+    # rows. Don't silently drop them — log a count + approximate population,
+    # then exclude them (they can't be combined with the other sources by FM
+    # unit); _build_adm1_rows only considers rows with a non-null fm_pcode.
+    orphans = gdacs_adm1_df[gdacs_adm1_df["fm_pcode"].isna()]
+    if not orphans.empty:
+        n_units = orphans["gdacs_admins"].nunique()
+        # Wind-speed bands nest (everyone exposed at 64kt is also in the 34kt
+        # band), so don't sum across them — that double/triple-counts. Take
+        # the widest band per unit (max over wind speeds = the 34kt figure
+        # for cumulative exposure) as a truer headcount.
+        orphan_pop = int(
+            orphans.groupby("gdacs_admins")["pop_exposed"].max().sum()
+        )
+        logger.warning(
+            f"Storm {atcf_id}: dropping {n_units} GDACS adm1 unit(s) with no "
+            f"FieldMaps match (~{orphan_pop} pop in the widest wind band) "
+            f"from the exposure rows."
+        )
+
     rows.extend(
         _build_adm1_rows(
             atcf_id,
             set(storm_iso3s),
+            final_iso3s,
             iso3_to_name,
             fm_name_by_pcode,
             fcast_adm1_df,
@@ -532,5 +611,7 @@ def build_storm_rows(engine: Engine, atcf_id: str, issued_time: datetime) -> lis
     )
 
     df_out = pd.DataFrame(rows).reindex(columns=_CSV_COLS)
-    df_out = df_out.sort_values(["iso3", "admin_level", "pcode"], na_position="first")
+    df_out = df_out.sort_values(
+        ["iso3", "admin_level", "admin_pcode"], na_position="first"
+    )
     return df_out.to_dict("records")

@@ -49,7 +49,7 @@ def main(
     """
     logger.info(f"##### {_LOOKUP} version {__version__} ####")
     configuration = Configuration.read()
-    User.check_current_user_write_access("hdx")
+    User.check_current_user_write_access("05547d2c-8430-4ce8-8e48-e3ea7e52a9a2")
     season = datetime.now(UTC).year
     engine = stratus.get_engine(stage=_DB_STAGE)
 
@@ -97,7 +97,7 @@ def main(
 if __name__ == "__main__":
     facade(
         main,
-        #        hdx_site="dev",
+        # hdx_site="demo",
         user_agent_config_yaml=join(expanduser("~"), ".useragents.yaml"),
         user_agent_lookup=_LOOKUP,
         project_config_yaml=script_dir_plus_file(

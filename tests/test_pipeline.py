@@ -27,14 +27,18 @@ class TestPipeline:
 
         assert dataset is not None
         assert dataset["name"] == "storm-arthur-2026-al012026"
-        assert dataset["title"] == "Arthur (2026) - Storm Population Exposure"
+        assert (
+            dataset["title"]
+            == "United States of America - Storm Population Exposure, "
+            "Arthur (2026, North Atlantic)"
+        )
         assert {t["name"] for t in dataset["tags"]} == {
             "climate-weather",
             "cyclones-hurricanes-typhoons",
         }
         resources = dataset.get_resources()
         assert len(resources) == 1
-        assert resources[0]["name"] == "storm-arthur-2026-al012026.csv"
+        assert resources[0]["name"] == "storm_exposure_arthur_al012026.csv"
 
     def test_generate_dataset_skips_zero_exposure(
         self, configuration, input_dir, config_dir, mock_exposure_fetchers

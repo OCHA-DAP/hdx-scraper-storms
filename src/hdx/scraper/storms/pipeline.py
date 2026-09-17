@@ -7,6 +7,7 @@ from datetime import datetime
 from hdx.api.configuration import Configuration
 from hdx.data.dataset import Dataset
 from hdx.data.hdxobject import HDXError
+from hdx.location.country import Country
 from hdx.utilities.retriever import Retrieve
 from slugify import slugify
 from sqlalchemy import Engine, bindparam, text
@@ -14,6 +15,15 @@ from sqlalchemy import Engine, bindparam, text
 from hdx.scraper.storms.exposure import _CSV_COLS, build_storm_rows
 
 logger = logging.getLogger(__name__)
+
+BASIN_NAMES = {
+    "al": "North Atlantic",
+    "ep": "Eastern Pacific",
+    "cp": "Central Pacific",
+    "wp": "Western Pacific",
+    "io": "North Indian Ocean",
+    "sh": "Southern Hemisphere",
+}
 
 
 def get_storms(engine: Engine, season: int) -> list[dict]:
@@ -71,6 +81,12 @@ class Pipeline:
             return None
 
         storm_label = (name or atcf_id).strip().title()
+        basin_name = BASIN_NAMES.get(atcf_id[:2].lower())
+        if basin_name:
+            storm_descriptor = f"{storm_label} ({season}, {basin_name})"
+        else:
+            storm_descriptor = f"{storm_label} ({season})"
+
         rows = build_storm_rows(self._engine, atcf_id, issued_time)
         if not rows:
             logger.info(
@@ -78,8 +94,11 @@ class Pipeline:
             )
             return None
 
+        iso3s = sorted({row["iso3"] for row in rows if row["iso3"]})
+        country_names = [Country.get_country_name_from_iso3(iso3) or iso3 for iso3 in iso3s]
+
         dataset_name = slugify(f"storm-{storm_label}-{season}-{atcf_id}")
-        dataset_title = f"{storm_label} ({season}) - Storm Population Exposure"
+        dataset_title = f"{', '.join(country_names)} - Storm Population Exposure, {storm_descriptor}"
         dataset = Dataset(
             {
                 "name": dataset_name,
@@ -87,15 +106,17 @@ class Pipeline:
             }
         )
         dataset["notes"] = (
-            f"Population exposure estimates for {storm_label} ({season}), blending NHC "
-            f"forecast/observed tracks with GDACS and ADAM sources, at admin0 and admin1 "
-            f"level. Reflects the storm's most recent available advisory "
-            f"({issued_time.isoformat()})."
+            f"This dataset contains population exposure estimates for {storm_descriptor}, "
+            f"blending National Hurricane Center (NHC) forecast/observed "
+            f"track buffers with Global Disaster Alert and Coordination System (GDACS) and "
+            f"Advanced Geospatial Data Management (ADAM) population exposure estimates, at admin0 and admin1 level. Reflects the storm's most "
+            f"recent available advisory."
         )
         dataset.set_time_period(issued_time)
         dataset.add_tags(self._configuration["tags"])
+        is_final_alert = rows[0]["is_final_alert"]
+        dataset.set_expected_update_frequency(-1 if is_final_alert else 1)
 
-        iso3s = sorted({row["iso3"] for row in rows if row["iso3"]})
         dataset.set_subnational(True)
         try:
             dataset.add_country_locations(iso3s)
@@ -105,12 +126,15 @@ class Pipeline:
             )
             return None
 
-        resource_name = f"{dataset_name}.csv"
+        storm_slug = slugify(storm_label, separator="_")
+        resource_name = f"storm_exposure_{storm_slug}_{atcf_id.lower()}.csv"
         resourcedata = {
             "name": resource_name,
             "description": (
                 "Admin0 and admin1 population exposure by wind speed band, sourced from "
-                "NHC/CHD, GDACS, and ADAM (MAX across sources per unit)."
+                "the National Hurricane Center (NHC)/Centre for Humanitarian Data (CHD), "
+                "the Global Disaster Alert and Coordination System (GDACS), and Advanced Geospatial Data Management (ADAM) "
+                "(MAX across sources per unit)."
             ),
         }
         dataset.generate_resource(
@@ -119,5 +143,6 @@ class Pipeline:
             rows,
             resourcedata,
             _CSV_COLS,
+            encoding="utf-8-sig",
         )
         return dataset
