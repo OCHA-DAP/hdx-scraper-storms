@@ -116,7 +116,9 @@ class Pipeline:
         )
         dataset.set_time_period(issued_time)
         dataset.add_tags(self._configuration["tags"])
-        is_final_alert = rows[0]["is_final_alert"]
+        is_final_alert = all(
+            row["is_final_alert"] for row in rows if row["admin_level"] == 0
+        )
         dataset.set_expected_update_frequency(-1 if is_final_alert else 1)
 
         dataset.set_subnational(True)

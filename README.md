@@ -3,7 +3,42 @@
 [![Coverage Status](https://coveralls.io/repos/github/OCHA-DAP/hdx-scraper-storms/badge.svg?branch=main&ts=1)](https://coveralls.io/github/OCHA-DAP/hdx-scraper-storms?branch=main)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-This script ...
+This pipeline publishes one HDX dataset per tropical storm in the current
+season, containing modeled population exposure at admin0 (country) and admin1
+level.
+
+For each storm it:
+
+1. Looks up the season's storms in the OCHA Data Science storms database
+   (Azure Postgres, `storms.nhc_storms`) and takes each storm's most recent
+   NHC advisory.
+2. Pulls population exposure from three sources at that advisory time: CHD's
+   own NHC forecast/observed track buffers, GDACS, and ADAM.
+3. Maps GDACS and ADAM admin1 units onto FieldMaps p-codes so the sources can
+   be compared per subnational unit.
+4. For each admin unit and wind-speed band (34, 50, 64 kt), reports the
+   maximum exposed population across sources, along with which sources
+   contributed and any matching caveats. A country is flagged `is_final_alert`
+   once it drops out of the forecast but still has observed exposure.
+5. Skips storms with no positive exposure; otherwise writes a single CSV
+   resource (`storm_exposure_<name>_<atcf_id>.csv`) and creates or updates
+   the dataset in HDX.
+
+### Scheduling
+
+The pipeline runs every 6 hours and re-evaluates every storm in the season at its
+latest advisory and overwrites the existing dataset.
+
+### Expected update frequency
+
+The HDX `expected_update_frequency` is set per dataset from the
+`is_final_alert` flag: once every affected country's admin0 row is flagged
+final (the storm has dropped out of the forecast for all of them), the
+frequency is set to `-1` (never); otherwise it is set to `1`
+(every day) while the storm is still active.
+
+Data access requires dev-stage credentials for the OCHA Data Science Postgres
+database via `ocha-stratus`.
 
 ## Development
 
