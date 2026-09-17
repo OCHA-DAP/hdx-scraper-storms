@@ -95,7 +95,9 @@ class Pipeline:
             return None
 
         iso3s = sorted({row["iso3"] for row in rows if row["iso3"]})
-        country_names = [Country.get_country_name_from_iso3(iso3) or iso3 for iso3 in iso3s]
+        country_names = [
+            Country.get_country_name_from_iso3(iso3) or iso3 for iso3 in iso3s
+        ]
 
         dataset_name = slugify(f"storm-{storm_label}-{season}-{atcf_id}")
         dataset_title = f"{', '.join(country_names)} - Storm Population Exposure, {storm_descriptor}"

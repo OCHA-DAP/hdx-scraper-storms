@@ -28,8 +28,7 @@ class TestPipeline:
         assert dataset is not None
         assert dataset["name"] == "storm-arthur-2026-al012026"
         assert (
-            dataset["title"]
-            == "United States of America - Storm Population Exposure, "
+            dataset["title"] == "United States of America - Storm Population Exposure, "
             "Arthur (2026, North Atlantic)"
         )
         assert {t["name"] for t in dataset["tags"]} == {

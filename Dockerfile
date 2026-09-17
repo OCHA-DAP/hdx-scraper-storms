@@ -13,7 +13,7 @@ ENV UV_LINK_MODE=copy
 # 1. Install System Dependencies
 RUN --mount=type=cache,target=/var/cache/apk \
     apk add --upgrade \
-    git 
+    git
 
 # 2. Copy only dependency locks first for layer caching
 COPY pyproject.toml uv.lock ./

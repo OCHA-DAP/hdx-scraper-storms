@@ -587,9 +587,7 @@ def build_storm_rows(engine: Engine, atcf_id: str, issued_time: datetime) -> lis
         # band), so don't sum across them — that double/triple-counts. Take
         # the widest band per unit (max over wind speeds = the 34kt figure
         # for cumulative exposure) as a truer headcount.
-        orphan_pop = int(
-            orphans.groupby("gdacs_admins")["pop_exposed"].max().sum()
-        )
+        orphan_pop = int(orphans.groupby("gdacs_admins")["pop_exposed"].max().sum())
         logger.warning(
             f"Storm {atcf_id}: dropping {n_units} GDACS adm1 unit(s) with no "
             f"FieldMaps match (~{orphan_pop} pop in the widest wind band) "
