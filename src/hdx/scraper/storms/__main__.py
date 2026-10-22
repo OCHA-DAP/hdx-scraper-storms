@@ -1,15 +1,14 @@
 #!/usr/bin/python
 """
-Top level script. Loops over every storm in the current season and creates
-one HDX dataset per storm.
+Top level script. Loops over every storm in the latest export manifest and
+creates one HDX dataset per storm.
 
 """
 
 import logging
-from datetime import UTC, datetime
+from os import getenv
 from os.path import expanduser, join
 
-import ocha_stratus as stratus
 from hdx.api.configuration import Configuration
 from hdx.data.user import User
 from hdx.facades.infer_arguments import facade
@@ -21,7 +20,12 @@ from hdx.utilities.path import (
 from hdx.utilities.retriever import Retrieve
 
 from hdx.scraper.storms._version import __version__
-from hdx.scraper.storms.pipeline import Pipeline, get_storms
+from hdx.scraper.storms.pipeline import (
+    Pipeline,
+    load_storm_rows,
+    manifest_age_hours,
+    read_manifest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +33,10 @@ _LOOKUP = "hdx-scraper-storms"
 _SAVED_DATA_DIR = "saved_data"  # Keep in repo to avoid deletion in /tmp
 _UPDATED_BY_SCRIPT = "HDX Scraper: Storms"
 
-# Only dev-stage Azure Postgres access is available for this pipeline so far.
-# Promoting to stage="prod" is a follow-up once prod DB credentials exist.
-_DB_STAGE = "dev"
+# The export runs with every NHC advisory (four times a day). A manifest older
+# than this means the export has not run for the current advisory, so there
+# is nothing new to publish. Set FORCE_PUBLISH=true to publish it anyway.
+_MAX_AGE_HOURS = 6
 
 
 def main(
@@ -50,8 +55,20 @@ def main(
     logger.info(f"##### {_LOOKUP} version {__version__} ####")
     configuration = Configuration.read()
     User.check_current_user_write_access("05547d2c-8430-4ce8-8e48-e3ea7e52a9a2")
-    season = datetime.now(UTC).year
-    engine = stratus.get_engine(stage=_DB_STAGE)
+    manifest = read_manifest()
+    age_hours = manifest_age_hours(manifest)
+    logger.info(
+        f"Export manifest generated {manifest['generated_at']} ({age_hours:.1f}h ago) "
+        f"for advisory {manifest['as_of']}: {len(manifest['storms'])} storm(s)"
+    )
+    if age_hours > _MAX_AGE_HOURS:
+        if getenv("FORCE_PUBLISH", "false").lower() != "true":
+            logger.warning(
+                f"Manifest is older than {_MAX_AGE_HOURS}h: the export has not run "
+                "for the current advisory, so nothing is published."
+            )
+            return
+        logger.warning("Manifest is stale but FORCE_PUBLISH is set: publishing.")
 
     with wheretostart_tempdir_batch(folder=_LOOKUP) as info:
         tempdir = info["folder"]
@@ -64,16 +81,13 @@ def main(
                 save=save,
                 use_saved=use_saved,
             )
-            pipeline = Pipeline(configuration, retriever, tempdir, engine)
+            pipeline = Pipeline(configuration, retriever, tempdir)
 
-            storms = get_storms(engine, season)
-            logger.info(f"Found {len(storms)} storm(s) for season {season}")
-            for storm in storms:
+            for storm in manifest["storms"]:
                 atcf_id = storm["atcf_id"]
                 try:
-                    dataset = pipeline.generate_dataset(
-                        atcf_id, storm["name"], storm["season"]
-                    )
+                    rows = load_storm_rows(storm["blob"])
+                    dataset = pipeline.generate_dataset(storm, rows)
                 except Exception:
                     logger.exception(
                         f"Failed to generate dataset for storm {atcf_id}, skipping"

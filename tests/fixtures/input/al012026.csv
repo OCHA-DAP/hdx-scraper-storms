@@ -1,0 +1,4 @@
+atcf_id,admin_level,iso3,country_name,admin_pcode,admin_name,is_final_alert,pop_exposed_34kt,pop_exposed_50kt,pop_exposed_64kt,sources_34kt,sources_50kt,sources_64kt,caveat_34kt,caveat_50kt,caveat_64kt
+AL012026,0,USA,United States of America,,United States of America,True,16996703,0,0,CHD|ADAM|GDACS,,,,,
+AL012026,1,USA,United States of America,USA-20230119-22,Louisiana,True,757502,0,0,CHD|ADAM|GDACS,,,,,
+AL012026,1,USA,United States of America,USA-20230119-48,Texas,True,16284208,0,0,CHD|ADAM|GDACS,,,,,

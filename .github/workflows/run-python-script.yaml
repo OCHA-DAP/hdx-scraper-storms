@@ -1,11 +1,25 @@
 # This workflow will install Python dependencies and run the script
+#
+# The data comes from the "Storm Alert" Databricks job (OCHA-DAP/ds-storms-alerts,
+# task hdx_export), which reads the storms database (unreachable from GitHub
+# Actions since 2026-09-30) and writes one CSV per storm plus a manifest to the
+# DSci dev blob after every NHC advisory: 04:15 / 10:15 / 16:15 / 22:15 UTC
+# while NHC runs on its temporary 6-hourly cadence, ~03:50 / 09:50 / 15:50 /
+# 21:50 once it reverts. The cron below runs 30 min after the former, which
+# is after both. A manifest older than 6 h is skipped (the export missed a
+# cycle); dispatch with force to publish it anyway.
 
 name: Run script
 
 on:
   workflow_dispatch: # add run button in github
+    inputs:
+      force:
+        description: "Publish even if the export manifest is more than 6 hours old"
+        type: boolean
+        default: false
 #  schedule:
-#    - cron: "0 */6 * * *"
+#    - cron: "45 4,10,16,22 * * *"
 
 jobs:
   run:
@@ -28,13 +42,13 @@ jobs:
           PREPREFIX: ${{ vars.HDX_USER_AGENT_PREPREFIX }}
           USER_AGENT: ${{ vars.USER_AGENT }}
           EXTRA_PARAMS: ${{ vars.EXTRA_PARAMS }}
-          DSCI_AZ_DB_DEV_HOST: ${{ secrets.DSCI_AZ_DB_DEV_HOST }}
-          DSCI_AZ_DB_DEV_UID: ${{ secrets.DSCI_AZ_DB_DEV_UID }}
-          DSCI_AZ_DB_DEV_PW: ${{ secrets.DSCI_AZ_DB_DEV_PW }}
-          PGSSLMODE: require
+          # Read access to the export on the DSci dev blob (OCHA-DAP org secret)
+          DSCI_AZ_BLOB_DEV_SAS: ${{ secrets.DSCI_AZ_BLOB_DEV_SAS }}
+          FORCE_PUBLISH: ${{ inputs.force || 'false' }}
 
         # 'uv run' executes the command inside the environment created by 'uv sync'
         run: |
+          test -n "$DSCI_AZ_BLOB_DEV_SAS" || { echo "::error::DSCI_AZ_BLOB_DEV_SAS org secret is not visible to this repo"; exit 1; }
           uv run --frozen python -m hdx.scraper.storms
 
       - name: Send mail

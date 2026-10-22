@@ -1,0 +1,39 @@
+{
+ "generated_at": "2026-10-22T10:22:31.412093+00:00",
+ "as_of": "2026-10-22T09:00:00",
+ "season": 2026,
+ "db_stage": "prod",
+ "columns": [
+  "atcf_id",
+  "admin_level",
+  "iso3",
+  "country_name",
+  "admin_pcode",
+  "admin_name",
+  "is_final_alert",
+  "pop_exposed_34kt",
+  "pop_exposed_50kt",
+  "pop_exposed_64kt",
+  "sources_34kt",
+  "sources_50kt",
+  "sources_64kt",
+  "caveat_34kt",
+  "caveat_50kt",
+  "caveat_64kt"
+ ],
+ "storms": [
+  {
+   "atcf_id": "AL012026",
+   "name": "ARTHUR",
+   "season": 2026,
+   "issued_time": "2026-06-18T00:00:00",
+   "blob": "ds-storms-alerts/processed/hdx/2026-10-22T09/al012026.csv",
+   "n_rows": 3,
+   "iso3s": [
+    "USA"
+   ],
+   "all_final": true
+  }
+ ],
+ "failed": []
+}
