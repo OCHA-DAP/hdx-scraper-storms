@@ -6,8 +6,8 @@
 # DSci dev blob after every NHC advisory: 04:15 / 10:15 / 16:15 / 22:15 UTC
 # while NHC runs on its temporary 6-hourly cadence, ~03:50 / 09:50 / 15:50 /
 # 21:50 once it reverts. The cron below runs 30 min after the former, which
-# is after both. A manifest older than 6 h is skipped (the export missed a
-# cycle); dispatch with force to publish it anyway.
+# is after both. A manifest older than 6 h fails the run (the export missed a
+# cycle, so the failure mail goes out); dispatch with force to publish it anyway.
 
 name: Run script
 

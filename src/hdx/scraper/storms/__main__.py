@@ -33,9 +33,10 @@ _LOOKUP = "hdx-scraper-storms"
 _SAVED_DATA_DIR = "saved_data"  # Keep in repo to avoid deletion in /tmp
 _UPDATED_BY_SCRIPT = "HDX Scraper: Storms"
 
-# The export runs with every NHC advisory (four times a day). A manifest older
-# than this means the export has not run for the current advisory, so there
-# is nothing new to publish. Set FORCE_PUBLISH=true to publish it anyway.
+# The export runs with every NHC advisory (four times a day), all year. A
+# manifest older than this means it missed the current advisory: the run
+# fails (so the failure mail goes out) rather than republishing old figures.
+# Set FORCE_PUBLISH=true to publish it anyway.
 _MAX_AGE_HOURS = 6
 
 
@@ -63,11 +64,11 @@ def main(
     )
     if age_hours > _MAX_AGE_HOURS:
         if getenv("FORCE_PUBLISH", "false").lower() != "true":
-            logger.warning(
-                f"Manifest is older than {_MAX_AGE_HOURS}h: the export has not run "
-                "for the current advisory, so nothing is published."
+            raise RuntimeError(
+                f"Export manifest is {age_hours:.1f}h old (limit {_MAX_AGE_HOURS}h): "
+                "the Databricks export has not run for the current advisory. "
+                "Nothing published; check the Storm Alert job's hdx_export task."
             )
-            return
         logger.warning("Manifest is stale but FORCE_PUBLISH is set: publishing.")
 
     with wheretostart_tempdir_batch(folder=_LOOKUP) as info:

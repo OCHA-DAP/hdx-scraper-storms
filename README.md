@@ -38,9 +38,9 @@ country names) and creates or updates the dataset in HDX.
 
 The pipeline is meant to run 30 minutes after each Databricks export (the cron
 in `.github/workflows/run-python-script.yaml`, commented out until go-live) and
-overwrites every dataset in the manifest. If the manifest is more than 6 hours old (the export missed an
-advisory), it publishes nothing; set `FORCE_PUBLISH=true` (the workflow's
-`force` input) to publish it anyway.
+overwrites every dataset in the manifest. If the manifest is more than 6 hours
+old (the export missed an advisory), the run fails without publishing; set
+`FORCE_PUBLISH=true` (the workflow's `force` input) to publish it anyway.
 
 ### Expected update frequency
 
