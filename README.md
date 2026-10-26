@@ -26,9 +26,12 @@ queries it. After every NHC advisory that task:
    once the storm no longer threatens it at the current advisory (no track
    forecast and no wind speed probability exposure), so every country of a
    storm that has ended is final.
-4. Writes one CSV per storm with positive exposure to the DSci dev blob,
-   `ds-storms-alerts/processed/hdx/<advisory>/<atcf_id>.csv`, and then a
+4. Writes one CSV per storm that has had positive exposure to the DSci dev
+   blob, `ds-storms-alerts/processed/hdx/<advisory>/<atcf_id>.csv`, and then a
    manifest listing them, `ds-storms-alerts/processed/hdx/latest/manifest.json`.
+   A storm whose forecast moved off land without ever reaching it stays in,
+   reporting the countries it last threatened at the current figures (zero
+   from CHD's own tracks), so its dataset is still marked final.
 
 This pipeline reads that manifest and, for each storm in it, writes the CSV as
 the dataset's single resource (`storm_exposure_<name>_<atcf_id>.csv`, with HDX
