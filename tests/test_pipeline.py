@@ -40,8 +40,8 @@ class TestPipeline:
         assert dataset is not None
         assert dataset["name"] == "storm-arthur-2026-al012026"
         assert (
-            dataset["title"] == "United States of America - Storm Population Exposure, "
-            "Arthur (2026, North Atlantic)"
+            dataset["title"]
+            == "United States of America - Storm Arthur (2026) Population Exposure"
         )
         assert {t["name"] for t in dataset["tags"]} == {
             "climate-weather",
@@ -129,9 +129,41 @@ class TestPipeline:
             dataset = pipeline.generate_dataset(storm, [row])
 
         assert dataset["name"] == "storm-xx012026-2026-xx012026"
-        assert dataset["title"] == (
-            "Nicaragua - Storm Population Exposure, Xx012026 (2026)"
+        assert (
+            dataset["title"] == "Nicaragua - Storm Xx012026 (2026) Population Exposure"
         )
         assert dataset["data_update_frequency"] == "1"
         assert row["country_name"] == "Nicaragua"
         assert row["admin_name"] == "Nicaragua"
+
+    @pytest.mark.parametrize(
+        "atcf_id, scope", [("AL102026", "North Atlantic"), ("XX102026", "Global")]
+    )
+    def test_generate_dataset_multi_country_title(self, configuration, atcf_id, scope):
+        rows = []
+        for iso3 in ("USA", "NIC"):
+            row = dict.fromkeys(_CSV_COLS, "")
+            row.update(
+                atcf_id=atcf_id,
+                admin_level="0",
+                iso3=iso3,
+                is_final_alert="True",
+                pop_exposed_34kt="10",
+            )
+            rows.append(row)
+        storm = {
+            "atcf_id": atcf_id,
+            "name": "JOSEPHINE",
+            "season": 2026,
+            "issued_time": "2026-10-22T00:00:00",
+            "all_final": True,
+        }
+        with temp_dir(
+            "TestStormsMulti", delete_on_success=True, delete_on_failure=False
+        ) as tempdir:
+            pipeline = Pipeline(configuration, None, tempdir)
+            dataset = pipeline.generate_dataset(storm, rows)
+
+        assert dataset["title"] == (
+            f"{scope} - Storm Josephine (2026) Population Exposure"
+        )

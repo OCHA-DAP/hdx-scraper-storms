@@ -129,7 +129,13 @@ class Pipeline:
         country_names = [iso3_to_name[iso3] for iso3 in iso3s]
 
         dataset_name = slugify(f"storm-{storm_label}-{season}-{atcf_id}")
-        dataset_title = f"{', '.join(country_names)} - Storm Population Exposure, {storm_descriptor}"
+        # HDX title convention: a single-country dataset starts with the country,
+        # otherwise with the broadest meaningful region (here the basin). The
+        # season stays in because storm names are reused every few years.
+        scope = (
+            country_names[0] if len(country_names) == 1 else (basin_name or "Global")
+        )
+        dataset_title = f"{scope} - Storm {storm_label} ({season}) Population Exposure"
         dataset = Dataset(
             {
                 "name": dataset_name,
