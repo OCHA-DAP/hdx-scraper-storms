@@ -1,18 +1,17 @@
 #!/usr/bin/python
 """Storms scraper — one HDX dataset per storm, population exposure by admin0/admin1."""
 
+import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
+import ocha_stratus as stratus
 from hdx.api.configuration import Configuration
 from hdx.data.dataset import Dataset
 from hdx.data.hdxobject import HDXError
 from hdx.location.country import Country
 from hdx.utilities.retriever import Retrieve
 from slugify import slugify
-from sqlalchemy import Engine, bindparam, text
-
-from hdx.scraper.storms.exposure import _CSV_COLS, build_storm_rows
 
 logger = logging.getLogger(__name__)
 
@@ -25,39 +24,63 @@ BASIN_NAMES = {
     "sh": "Southern Hemisphere",
 }
 
+# Written by the hdx_export task of the "Storm Alert" Databricks job
+# (OCHA-DAP/ds-storms-alerts, src/hdx_export.py) on the DEV storage account,
+# readable here with the DSCI_AZ_BLOB_DEV_SAS org secret. The manifest is
+# written last and lists one CSV per storm, so it always describes a complete
+# set.
+BLOB_STAGE = "dev"
+MANIFEST_BLOB = "ds-storms-alerts/processed/hdx/latest/manifest.json"
 
-def get_storms(engine: Engine, season: int) -> list[dict]:
-    """Storms in `season` from the canonical NHC storm registry.
+# Column order of the per-storm CSV (and of the HDX resource). The export
+# writes the same list into the manifest; read_manifest refuses a mismatch.
+_CSV_COLS = [
+    "atcf_id",
+    "admin_level",
+    "iso3",
+    "country_name",
+    "admin_pcode",
+    "admin_name",
+    "is_final_alert",
+    "pop_exposed_34kt",
+    "pop_exposed_50kt",
+    "pop_exposed_64kt",
+    "sources_34kt",
+    "sources_50kt",
+    "sources_64kt",
+    "caveat_34kt",
+    "caveat_50kt",
+    "caveat_64kt",
+]
 
-    Returns [{atcf_id, name, season}, ...]. If a current-season storm exists
-    only in the historical ibtracs_storms fallback (not yet in nhc_storms),
-    it won't appear here — nhc_storms is expected to be populated in near
-    real time for active storms.
-    """
-    sql = text("""
-        SELECT atcf_id, name, season
-        FROM storms.nhc_storms
-        WHERE season = :season
-        ORDER BY atcf_id
-    """)
-    with engine.connect() as conn:
-        rows = conn.execute(sql, {"season": season}).fetchall()
-    return [{"atcf_id": r[0], "name": r[1], "season": r[2]} for r in rows]
+
+def read_manifest() -> dict:
+    """The latest export manifest: generated_at, as_of, season, and one entry
+    per storm with positive exposure: {atcf_id, name, season, issued_time,
+    blob, n_rows, iso3s, all_final}."""
+    manifest = json.loads(stratus.load_blob_data(MANIFEST_BLOB, stage=BLOB_STAGE))
+    if manifest["columns"] != _CSV_COLS:
+        raise ValueError(
+            f"Export columns {manifest['columns']} do not match this pipeline's "
+            f"{_CSV_COLS}; update _CSV_COLS together with the export."
+        )
+    return manifest
 
 
-def get_latest_issued_time(engine: Engine, atcf_ids: list[str]) -> dict[str, datetime]:
-    """{atcf_id: MAX(issued_time)} across all forecast advisories on record."""
-    if not atcf_ids:
-        return {}
-    sql = text("""
-        SELECT atcf_id, MAX(issued_time) AS issued_time
-        FROM storms.nhc_tracks_geo
-        WHERE atcf_id IN :atcf_ids
-        GROUP BY atcf_id
-    """).bindparams(bindparam("atcf_ids", expanding=True))
-    with engine.connect() as conn:
-        rows = conn.execute(sql, {"atcf_ids": atcf_ids}).fetchall()
-    return {r[0]: r[1] for r in rows}
+def manifest_age_hours(manifest: dict, now: datetime | None = None) -> float:
+    """Hours since the export wrote `manifest`."""
+    now = now or datetime.now(UTC)
+    generated_at = datetime.fromisoformat(manifest["generated_at"])
+    return (now - generated_at).total_seconds() / 3600
+
+
+def load_storm_rows(blob: str) -> list[dict]:
+    """One storm's CSV rows, every value kept as the export wrote it (strings;
+    no NaN for the empty admin_pcode/sources/caveat cells)."""
+    df = stratus.load_csv_from_blob(
+        blob, stage=BLOB_STAGE, dtype=str, keep_default_na=False
+    )
+    return df[_CSV_COLS].to_dict("records")
 
 
 class Pipeline:
@@ -66,19 +89,17 @@ class Pipeline:
         configuration: Configuration,
         retriever: Retrieve,
         tempdir: str,
-        engine: Engine,
     ):
         self._configuration = configuration
         self._retriever = retriever
         self._tempdir = tempdir
-        self._engine = engine
 
-    def generate_dataset(self, atcf_id: str, name: str, season: int) -> Dataset | None:
-        issued_times = get_latest_issued_time(self._engine, [atcf_id])
-        issued_time = issued_times.get(atcf_id)
-        if issued_time is None:
-            logger.warning(f"No track data for storm {atcf_id}, skipping")
-            return None
+    def generate_dataset(self, storm: dict, rows: list[dict]) -> Dataset | None:
+        """Dataset for one manifest entry `storm` and its CSV `rows`."""
+        atcf_id = storm["atcf_id"]
+        name = storm["name"]
+        season = storm["season"]
+        issued_time = datetime.fromisoformat(storm["issued_time"])
 
         storm_label = (name or atcf_id).strip().title()
         basin_name = BASIN_NAMES.get(atcf_id[:2].lower())
@@ -87,7 +108,6 @@ class Pipeline:
         else:
             storm_descriptor = f"{storm_label} ({season})"
 
-        rows = build_storm_rows(self._engine, atcf_id, issued_time)
         if not rows:
             logger.info(
                 f"No positive exposure for storm {atcf_id} ({storm_label}), skipping"
@@ -95,9 +115,18 @@ class Pipeline:
             return None
 
         iso3s = sorted({row["iso3"] for row in rows if row["iso3"]})
-        country_names = [
-            Country.get_country_name_from_iso3(iso3) or iso3 for iso3 in iso3s
-        ]
+        iso3_to_name = {
+            iso3: Country.get_country_name_from_iso3(iso3) or iso3 for iso3 in iso3s
+        }
+        # The export names countries as the alert emails do (FieldMaps, e.g.
+        # "Saint Pierre and Miquelon (Fr.)"); use HDX's names on HDX, matching
+        # the title and the dataset's locations.
+        for row in rows:
+            country_name = iso3_to_name.get(row["iso3"], row["country_name"])
+            row["country_name"] = country_name
+            if str(row["admin_level"]) == "0":
+                row["admin_name"] = country_name
+        country_names = [iso3_to_name[iso3] for iso3 in iso3s]
 
         dataset_name = slugify(f"storm-{storm_label}-{season}-{atcf_id}")
         dataset_title = f"{', '.join(country_names)} - Storm Population Exposure, {storm_descriptor}"
@@ -116,10 +145,10 @@ class Pipeline:
         )
         dataset.set_time_period(issued_time)
         dataset.add_tags(self._configuration["tags"])
-        is_final_alert = all(
-            row["is_final_alert"] for row in rows if row["admin_level"] == 0
-        )
-        dataset.set_expected_update_frequency(-1 if is_final_alert else 1)
+        # all_final: every country's is_final_alert is TRUE, i.e. the storm no
+        # longer threatens any of them (judged by the export against the
+        # current advisory), so the figures will not change.
+        dataset.set_expected_update_frequency(-1 if storm["all_final"] else 1)
 
         dataset.set_subnational(True)
         try:

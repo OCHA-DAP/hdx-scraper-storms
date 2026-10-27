@@ -7,27 +7,43 @@ This pipeline publishes one HDX dataset per tropical storm in the current
 season, containing modeled population exposure at admin0 (country) and admin1
 level.
 
-For each storm it:
+The exposure figures are computed by the OCHA Data Science storms database's
+own pipelines on Databricks: the `hdx_export` task of the "Storm Alert" job
+([OCHA-DAP/ds-storms-alerts](https://github.com/OCHA-DAP/ds-storms-alerts),
+`src/hdx_export.py`). The database is reachable only from inside the OCHA
+network (private endpoint) since 30 September 2026, so this pipeline no longer
+queries it. After every NHC advisory that task:
 
-1. Looks up the season's storms in the OCHA Data Science storms database
-   (Azure Postgres, `storms.nhc_storms`) and takes each storm's most recent
+1. Takes the season's storms (`storms.nhc_storms`) and each storm's most recent
    NHC advisory.
 2. Pulls population exposure from three sources at that advisory time: CHD's
-   own NHC forecast/observed track buffers, GDACS, and ADAM.
-3. Maps GDACS and ADAM admin1 units onto FieldMaps p-codes so the sources can
-   be compared per subnational unit.
-4. For each admin unit and wind-speed band (34, 50, 64 kt), reports the
+   own NHC forecast/observed track buffers, GDACS, and ADAM, mapping GDACS and
+   ADAM admin1 units onto FieldMaps p-codes so the sources can be compared per
+   subnational unit.
+3. For each admin unit and wind-speed band (34, 50, 64 kt), reports the
    maximum exposed population across sources, along with which sources
    contributed and any matching caveats. A country is flagged `is_final_alert`
-   once it drops out of the forecast but still has observed exposure.
-5. Skips storms with no positive exposure; otherwise writes a single CSV
-   resource (`storm_exposure_<name>_<atcf_id>.csv`) and creates or updates
-   the dataset in HDX.
+   once the storm no longer threatens it at the current advisory (no track
+   forecast and no wind speed probability exposure), so every country of a
+   storm that has ended is final.
+4. Writes one CSV per storm that has had positive exposure to the DSci dev
+   blob, `ds-storms-alerts/processed/hdx/<advisory>/<atcf_id>.csv`, and then a
+   manifest listing them, `ds-storms-alerts/processed/hdx/latest/manifest.json`.
+   A storm whose forecast moved off land without ever reaching it stays in,
+   reporting the countries it last threatened at the current figures (zero
+   from CHD's own tracks), so its dataset is still marked final.
+
+This pipeline reads that manifest and, for each storm in it, writes the CSV as
+the dataset's single resource (`storm_exposure_<name>_<atcf_id>.csv`, with HDX
+country names) and creates or updates the dataset in HDX.
 
 ### Scheduling
 
-The pipeline runs every 6 hours and re-evaluates every storm in the season at its
-latest advisory and overwrites the existing dataset.
+The pipeline is meant to run 30 minutes after each Databricks export (the cron
+in `.github/workflows/run-python-script.yaml`, commented out until go-live) and
+overwrites every dataset in the manifest. If the manifest is more than 6 hours
+old (the export missed an advisory), the run fails without publishing; set
+`FORCE_PUBLISH=true` (the workflow's `force` input) to publish it anyway.
 
 ### Expected update frequency
 
@@ -35,10 +51,11 @@ The HDX `expected_update_frequency` is set per dataset from the
 `is_final_alert` flag: once every affected country's admin0 row is flagged
 final (the storm has dropped out of the forecast for all of them), the
 frequency is set to `-1` (never); otherwise it is set to `1`
-(every day) while the storm is still active.
+(every day) while the storm is still active. The manifest carries this as
+`all_final` per storm.
 
-Data access requires dev-stage credentials for the OCHA Data Science Postgres
-database via `ocha-stratus`.
+Reading the export requires the `DSCI_AZ_BLOB_DEV_SAS` environment variable
+(the OCHA-DAP organisation secret of the same name), used by `ocha-stratus`.
 
 ## Development
 

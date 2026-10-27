@@ -1,5 +1,3 @@
-import json
-from datetime import datetime
 from os.path import join
 
 import pandas as pd
@@ -55,151 +53,23 @@ def configuration(config_dir):
     return Configuration.read()
 
 
-@pytest.fixture(scope="session")
-def storm_fixtures(input_dir):
-    """Real captured Postgres query results (see tests/fixtures/input/storm_exposure.json),
-    one entry per real storm from the dev DB, keyed by atcf_id."""
-    with open(join(input_dir, "storm_exposure.json")) as f:
-        return json.load(f)
-
-
 @pytest.fixture
-def mock_exposure_fetchers(monkeypatch, storm_fixtures):
-    """Monkeypatch exposure.py's DB fetch functions to replay storm_fixtures instead
-    of hitting Postgres, so build_storm_rows' real aggregation/harmonization logic
-    still runs against real captured data."""
-    from hdx.scraper.storms import exposure as ex
+def blob_fixtures(monkeypatch, input_dir):
+    """Serve the export's blobs from tests/fixtures/input: the manifest
+    (manifest.json) and each storm's CSV (<atcf_id>.csv, from a real export of
+    the prod storms database), through the same stratus calls the pipeline
+    makes against the dev storage account."""
+    import ocha_stratus as stratus
 
-    def _df(atcf_id, key, columns):
-        records = storm_fixtures[atcf_id][key]
-        return (
-            pd.DataFrame(records, columns=columns)
-            if records
-            else pd.DataFrame(columns=columns)
-        )
+    def _path(blob):
+        return join(input_dir, blob.rsplit("/", 1)[-1])
 
-    monkeypatch.setattr(
-        ex,
-        "fetch_storm_countries",
-        lambda engine, atcf_id, issued_time: storm_fixtures[atcf_id]["storm_iso3s"],
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_fcast_exposure",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "fcast_exposure",
-            ["atcf_id", "iso3", "wind_speed_kt", "pop_exposed"],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_current_obsv_exposure",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "obsv_exposure",
-            ["atcf_id", "iso3", "wind_speed_kt", "pop_exposed"],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_gdacs_current_exposure",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "gdacs_exposure",
-            ["atcf_id", "iso3", "wind_speed_kt", "pop_exposed"],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_adam_current_exposure",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "adam_exposure",
-            ["atcf_id", "iso3", "wind_speed_kt", "pop_exposed"],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_fcast_exposure_adm1",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "fcast_exposure_adm1",
-            ["atcf_id", "iso3", "fm_pcode", "wind_speed_kt", "pop_exposed"],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_current_obsv_exposure_adm1",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "obsv_exposure_adm1",
-            ["atcf_id", "iso3", "fm_pcode", "wind_speed_kt", "pop_exposed"],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_gdacs_current_exposure_adm1",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "gdacs_exposure_adm1",
-            [
-                "atcf_id",
-                "iso3",
-                "fm_pcode",
-                "wind_speed_kt",
-                "pop_exposed",
-                "n_gdacs_admins",
-                "gdacs_admins",
-                "caveat_note",
-            ],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_adam_current_exposure_adm1",
-        lambda engine, atcf_id, issued_time: _df(
-            atcf_id,
-            "adam_exposure_adm1",
-            [
-                "atcf_id",
-                "iso3",
-                "fm_pcode",
-                "wind_speed_kt",
-                "pop_exposed",
-                "n_adam_admins",
-                "adam_admins",
-                "caveat_note",
-            ],
-        ),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_fm_names",
-        lambda engine, iso3s: _fm_names_for(storm_fixtures, iso3s),
-    )
-    monkeypatch.setattr(
-        ex,
-        "fetch_prev_fcast_iso3s",
-        lambda engine, atcf_id, issued_time: set(
-            storm_fixtures[atcf_id].get("prev_fcast_iso3s", [])
-        ),
-    )
+    def _load_blob_data(blob, stage="dev", container_name="projects"):
+        with open(_path(blob), "rb") as f:
+            return f.read()
 
-    def _get_latest_issued_time(engine, atcf_ids):
-        return {
-            aid: datetime.fromisoformat(storm_fixtures[aid]["issued_time"])
-            for aid in atcf_ids
-            if aid in storm_fixtures
-        }
+    def _load_csv_from_blob(blob, stage="dev", container_name="projects", **kwargs):
+        return pd.read_csv(_path(blob), **kwargs)
 
-    from hdx.scraper.storms import pipeline as pl
-
-    monkeypatch.setattr(pl, "get_latest_issued_time", _get_latest_issued_time)
-
-
-def _fm_names_for(storm_fixtures, iso3s):
-    for data in storm_fixtures.values():
-        if set(data["storm_iso3s"]) & set(iso3s):
-            return data["fm_names"]
-    return {}
+    monkeypatch.setattr(stratus, "load_blob_data", _load_blob_data)
+    monkeypatch.setattr(stratus, "load_csv_from_blob", _load_csv_from_blob)
