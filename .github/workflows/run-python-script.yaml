@@ -18,8 +18,8 @@ on:
         description: "Publish even if the export manifest is more than 6 hours old"
         type: boolean
         default: false
-#  schedule:
-#    - cron: "45 4,10,16,22 * * *"
+  schedule:
+    - cron: "45 4,10,16,22 * * *"
 
 jobs:
   run:
