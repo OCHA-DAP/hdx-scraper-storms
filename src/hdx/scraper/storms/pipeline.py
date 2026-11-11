@@ -6,6 +6,7 @@ import logging
 from datetime import UTC, datetime
 
 import ocha_stratus as stratus
+from azure.core.exceptions import ResourceNotFoundError
 from hdx.api.configuration import Configuration
 from hdx.data.dataset import Dataset
 from hdx.data.hdxobject import HDXError
@@ -15,6 +16,8 @@ from slugify import slugify
 
 logger = logging.getLogger(__name__)
 
+# Basin of an NHC storm, from the first two letters of its ATCF id. Other
+# exports name their basin in the configuration (`basin_name`).
 BASIN_NAMES = {
     "al": "North Atlantic",
     "ep": "Eastern Pacific",
@@ -24,18 +27,18 @@ BASIN_NAMES = {
     "sh": "Southern Hemisphere",
 }
 
-# Written by the hdx_export task of the "Storm Alert" Databricks job
-# (OCHA-DAP/ds-storms-alerts, src/hdx_export.py) on the DEV storage account,
-# readable here with the DSCI_AZ_BLOB_DEV_SAS org secret. The manifest is
-# written last and lists one CSV per storm, so it always describes a complete
-# set.
+# The exports are written by the hdx_export tasks of the "Storm Alert"
+# Databricks job (OCHA-DAP/ds-storms-alerts, src/hdx_export.py) on the DEV
+# storage account, readable here with the DSCI_AZ_BLOB_DEV_SAS org secret:
+# one per basin entry of the project configuration. A manifest is written
+# last and lists one CSV per storm, so it always describes a complete set.
 BLOB_STAGE = "dev"
-MANIFEST_BLOB = "ds-storms-alerts/processed/hdx/latest/manifest.json"
 
-# Column order of the per-storm CSV (and of the HDX resource). The export
-# writes the same list into the manifest; read_manifest refuses a mismatch.
-_CSV_COLS = [
-    "atcf_id",
+# Columns of the per-storm CSV (and of the HDX resource) after the storm id,
+# which is named per basin (`id_column`): atcf_id for NHC storms, storm_id
+# where there is no ATCF id. The export writes its full list into the
+# manifest; read_manifest refuses a mismatch.
+_COMMON_COLS = [
     "admin_level",
     "iso3",
     "country_name",
@@ -54,15 +57,26 @@ _CSV_COLS = [
 ]
 
 
-def read_manifest() -> dict:
-    """The latest export manifest: generated_at, as_of, season, and one entry
-    per storm with positive exposure: {atcf_id, name, season, issued_time,
-    blob, n_rows, iso3s, all_final}."""
-    manifest = json.loads(stratus.load_blob_data(MANIFEST_BLOB, stage=BLOB_STAGE))
-    if manifest["columns"] != _CSV_COLS:
+class ExportNotReady(Exception):
+    """A basin's export cannot be published in this run."""
+
+
+def csv_columns(basin: dict) -> list[str]:
+    """Column order of `basin`'s per-storm CSV."""
+    return [basin["id_column"], *_COMMON_COLS]
+
+
+def read_manifest(basin: dict) -> dict:
+    """The latest export manifest of `basin` (an entry of the configuration's
+    `basins`): generated_at, as_of, season, and one entry per storm with
+    positive exposure: {<id_column>, name, season, issued_time, blob, n_rows,
+    iso3s, all_final}."""
+    manifest = json.loads(stratus.load_blob_data(basin["manifest"], stage=BLOB_STAGE))
+    columns = csv_columns(basin)
+    if manifest["columns"] != columns:
         raise ValueError(
-            f"Export columns {manifest['columns']} do not match this pipeline's "
-            f"{_CSV_COLS}; update _CSV_COLS together with the export."
+            f"Export columns {manifest['columns']} of {basin['manifest']} do not "
+            f"match this pipeline's {columns}; update them together with the export."
         )
     return manifest
 
@@ -74,13 +88,61 @@ def manifest_age_hours(manifest: dict, now: datetime | None = None) -> float:
     return (now - generated_at).total_seconds() / 3600
 
 
-def load_storm_rows(blob: str) -> list[dict]:
-    """One storm's CSV rows, every value kept as the export wrote it (strings;
-    no NaN for the empty admin_pcode/sources/caveat cells)."""
+def load_export(
+    key: str,
+    basin: dict,
+    max_age_hours: float,
+    force: bool = False,
+    now: datetime | None = None,
+) -> dict | None:
+    """The manifest of basin `key` if it can be published now.
+
+    None if the basin has no export yet and is not `required` (a basin whose
+    export is not live): it is skipped with a warning. Raises ExportNotReady
+    if a required manifest is missing, if its columns are not this pipeline's,
+    or if it is more than `max_age_hours` old and `force` is not set: the
+    export runs four times a day, all year, so an older manifest means it
+    missed a cycle, and old figures are not republished.
+    """
+    try:
+        manifest = read_manifest(basin)
+    except ResourceNotFoundError:
+        if basin.get("required", True):
+            raise ExportNotReady(
+                f"{key}: no export manifest at {basin['manifest']}"
+            ) from None
+        logger.warning(
+            f"{key}: no export manifest at {basin['manifest']} yet, skipping"
+        )
+        return None
+    except ValueError as err:
+        raise ExportNotReady(f"{key}: {err}") from None
+    age_hours = manifest_age_hours(manifest, now)
+    logger.info(
+        f"{key}: export manifest generated {manifest['generated_at']} "
+        f"({age_hours:.1f}h ago) as of {manifest['as_of']}: "
+        f"{len(manifest['storms'])} storm(s)"
+    )
+    if age_hours > max_age_hours:
+        if not force:
+            raise ExportNotReady(
+                f"{key}: export manifest is {age_hours:.1f}h old (limit "
+                f"{max_age_hours}h): the Databricks export has not run for the "
+                "current cycle. Nothing published for it; check the Storm Alert "
+                "job's hdx_export tasks."
+            )
+        logger.warning(f"{key}: manifest is stale but FORCE_PUBLISH is set.")
+    return manifest
+
+
+def load_storm_rows(blob: str, columns: list[str]) -> list[dict]:
+    """One storm's CSV rows in `columns` order, every value kept as the
+    export wrote it (strings; no NaN for the empty admin_pcode/sources/caveat
+    cells)."""
     df = stratus.load_csv_from_blob(
         blob, stage=BLOB_STAGE, dtype=str, keep_default_na=False
     )
-    return df[_CSV_COLS].to_dict("records")
+    return df[columns].to_dict("records")
 
 
 class Pipeline:
@@ -94,15 +156,22 @@ class Pipeline:
         self._retriever = retriever
         self._tempdir = tempdir
 
-    def generate_dataset(self, storm: dict, rows: list[dict]) -> Dataset | None:
-        """Dataset for one manifest entry `storm` and its CSV `rows`."""
-        atcf_id = storm["atcf_id"]
+    def generate_dataset(
+        self, storm: dict, rows: list[dict], basin: dict
+    ) -> Dataset | None:
+        """Dataset for one manifest entry `storm` of `basin` (an entry of
+        the configuration's `basins`) and its CSV `rows`."""
+        storm_id = storm[basin["id_column"]]
         name = storm["name"]
         season = storm["season"]
+        if basin.get("split_year_season"):
+            # Southern Hemisphere seasons run July to June; the export names
+            # them by the year they end.
+            season = f"{season - 1}/{season % 100:02d}"
         issued_time = datetime.fromisoformat(storm["issued_time"])
 
-        storm_label = (name or atcf_id).strip().title()
-        basin_name = BASIN_NAMES.get(atcf_id[:2].lower())
+        storm_label = (name or storm_id).strip().title()
+        basin_name = basin.get("basin_name") or BASIN_NAMES.get(storm_id[:2].lower())
         if basin_name:
             storm_descriptor = f"{storm_label} ({season}, {basin_name})"
         else:
@@ -110,7 +179,7 @@ class Pipeline:
 
         if not rows:
             logger.info(
-                f"No positive exposure for storm {atcf_id} ({storm_label}), skipping"
+                f"No positive exposure for storm {storm_id} ({storm_label}), skipping"
             )
             return None
 
@@ -128,7 +197,12 @@ class Pipeline:
                 row["admin_name"] = country_name
         country_names = [iso3_to_name[iso3] for iso3 in iso3s]
 
-        dataset_name = slugify(f"storm-{storm_label}-{season}-{atcf_id}")
+        if basin.get("name_by_id"):
+            # The storm may be named after its first forecasts: leave the
+            # name out, or the named storm would become a second dataset.
+            dataset_name = slugify(f"storm-{basin_name}-{season}-{storm_id}")
+        else:
+            dataset_name = slugify(f"storm-{storm_label}-{season}-{storm_id}")
         # HDX title convention: a single-country dataset starts with the country,
         # otherwise with the broadest meaningful region (here the basin). The
         # season stays in because storm names are reused every few years.
@@ -142,13 +216,9 @@ class Pipeline:
                 "title": dataset_title,
             }
         )
-        dataset["notes"] = (
-            f"This dataset contains population exposure estimates for {storm_descriptor}, "
-            f"blending National Hurricane Center (NHC) forecast/observed "
-            f"track buffers with Global Disaster Alert and Coordination System (GDACS) and "
-            f"Advanced Geospatial Data Management (ADAM) population exposure estimates, at admin0 and admin1 level. Reflects the storm's most "
-            f"recent available advisory."
-        )
+        dataset["notes"] = basin["notes"].format(storm=storm_descriptor)
+        dataset["methodology_other"] = basin["methodology_other"]
+        dataset["caveats"] = basin["caveats"]
         dataset.set_time_period(issued_time)
         dataset.add_tags(self._configuration["tags"])
         # all_final: every country's is_final_alert is TRUE, i.e. the storm no
@@ -161,27 +231,23 @@ class Pipeline:
             dataset.add_country_locations(iso3s)
         except HDXError:
             logger.error(
-                f"Could not find countries {iso3s} for storm {atcf_id}, skipping"
+                f"Could not find countries {iso3s} for storm {storm_id}, skipping"
             )
             return None
 
         storm_slug = slugify(storm_label, separator="_")
-        resource_name = f"storm_exposure_{storm_slug}_{atcf_id.lower()}.csv"
+        id_slug = slugify(storm_id, separator="_")
+        resource_name = f"storm_exposure_{storm_slug}_{id_slug}.csv"
         resourcedata = {
             "name": resource_name,
-            "description": (
-                "Admin0 and admin1 population exposure by wind speed band, sourced from "
-                "the National Hurricane Center (NHC)/Centre for Humanitarian Data (CHD), "
-                "the Global Disaster Alert and Coordination System (GDACS), and Advanced Geospatial Data Management (ADAM) "
-                "(MAX across sources per unit)."
-            ),
+            "description": basin["resource_description"],
         }
         dataset.generate_resource(
             self._tempdir,
             resource_name,
             rows,
             resourcedata,
-            _CSV_COLS,
+            csv_columns(basin),
             encoding="utf-8-sig",
         )
         return dataset

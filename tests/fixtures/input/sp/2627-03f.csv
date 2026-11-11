@@ -1,0 +1,5 @@
+storm_id,admin_level,iso3,country_name,admin_pcode,admin_name,is_final_alert,pop_exposed_34kt,pop_exposed_50kt,pop_exposed_64kt,sources_34kt,sources_50kt,sources_64kt,caveat_34kt,caveat_50kt,caveat_64kt
+2627-03F,0,FJI,Fiji,,Fiji,False,412300,96150,0,CHD,CHD,,,,
+2627-03F,1,FJI,Fiji,FJI-00000000-1,Example Division A,False,350200,96150,0,CHD,CHD,,,,
+2627-03F,1,FJI,Fiji,FJI-00000000-2,Example Division B,False,62100,0,0,CHD,,,,,
+2627-03F,0,TON,Tonga,,Tonga,True,18400,0,0,CHD,,,,,
