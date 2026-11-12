@@ -3,3 +3,75 @@ tags:
   - climate-weather
   - cyclones-hurricanes-typhoons
   - forecasting
+
+# One entry per export of the OCHA Data Science storms database: the storms of
+# one forecast centre, written to the DSci dev blob by a Databricks task
+# (OCHA-DAP/ds-storms-alerts, src/hdx_export.py).
+#   manifest    blob the export writes last, listing one CSV per storm
+#   id_column   first column of that export's CSVs, and the key of each
+#               manifest entry. The remaining columns are the same everywhere.
+#   required    false = a manifest that does not exist yet is skipped with a
+#               warning instead of failing the run
+#   basin_name  basin shown in titles and notes; left out for NHC, whose
+#               ATCF ids start with the basin (see BASIN_NAMES)
+#   split_year_season  true = seasons run July to June and the export names
+#               them by the year they end: 2026 is shown as 2025/26
+#   name_by_id  true = the dataset name (its URL) is built from the basin,
+#               season and storm id, without the storm's name. For centres
+#               that forecast a disturbance under its number before naming
+#               it, so that the dataset keeps one name. Needs basin_name.
+#   notes, resource_description, methodology_other, caveats
+#               dataset texts; {storm} in notes is "Name (season, basin)"
+basins:
+  nhc:
+    manifest: ds-storms-alerts/processed/hdx/latest/manifest.json
+    id_column: atcf_id
+    required: true
+    notes: >-
+      This dataset contains population exposure estimates for {storm},
+      blending National Hurricane Center (NHC) forecast/observed track buffers
+      with Global Disaster Alert and Coordination System (GDACS) and Advanced
+      Geospatial Data Management (ADAM) population exposure estimates, at
+      admin0 and admin1 level. Reflects the storm's most recent available
+      advisory.
+    resource_description: >-
+      Admin0 and admin1 population exposure by wind speed band, sourced from
+      the National Hurricane Center (NHC)/Centre for Humanitarian Data (CHD),
+      the Global Disaster Alert and Coordination System (GDACS), and Advanced
+      Geospatial Data Management (ADAM) (MAX across sources per unit).
+    methodology_other: >-
+      Modeled population exposure combining NHC storm forecast/observed track
+      buffers with GDACS/ADAM exposure data
+    caveats: Admin1 units are identified using FieldMaps p-codes
+  # South Pacific: storms forecast by the Fiji Meteorological Service (RSMC
+  # Nadi). No ATCF ids, 10-minute mean winds, and no GDACS or ADAM figures.
+  sp:
+    manifest: ds-storms-alerts/processed/hdx_sp/latest/manifest.json
+    id_column: storm_id
+    # The export writes a test prefix until the South Pacific alert launches.
+    # Set to true once it writes this manifest, so a missing one fails the run.
+    required: false
+    basin_name: South Pacific
+    split_year_season: true
+    name_by_id: true
+    notes: >-
+      This dataset contains population exposure estimates for {storm}: the
+      number of people inside the areas of 34, 50 and 64 knot winds (10-minute
+      mean) along the Fiji Meteorological Service (RSMC Nadi) official
+      forecast and observed track, at admin0 and admin1 level. Reflects the
+      storm's most recent available forecast.
+    resource_description: >-
+      Admin0 and admin1 population exposure by wind speed band (10-minute mean
+      winds), calculated by the Centre for Humanitarian Data (CHD) from Fiji
+      Meteorological Service (RSMC Nadi) forecast and observed tracks.
+    methodology_other: >-
+      Modeled population exposure: WorldPop population inside the 34, 50 and
+      64 knot wind areas (10-minute mean winds) drawn from the wind radii of
+      Fiji Meteorological Service (RSMC Nadi) forecast and observed tracks
+    caveats: >-
+      Admin1 units are identified using FieldMaps p-codes and extend 500 m
+      offshore, so that people on coasts and atolls are counted. Kiribati is
+      not covered: the population grid has no data for it. Wind speeds are
+      10-minute means, not the 1-minute winds of the National Hurricane Center
+      datasets. CHD is the only source: there are no GDACS or ADAM figures for
+      this basin.

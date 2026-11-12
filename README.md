@@ -37,12 +37,54 @@ This pipeline reads that manifest and, for each storm in it, writes the CSV as
 the dataset's single resource (`storm_exposure_<name>_<atcf_id>.csv`, with HDX
 country names) and creates or updates the dataset in HDX.
 
+### South Pacific storms
+
+Storms forecast by the Fiji Meteorological Service (FMS, the Regional
+Specialized Meteorological Centre in Nadi) are published the same way from a
+second export, written by the `hdx_export_sp` task of the same Databricks job
+to `ds-storms-alerts/processed/hdx_sp/` with its own manifest. Each export is
+one entry under `basins` in
+`src/hdx/scraper/storms/config/project_configuration.yaml`, which holds its
+manifest, the name of its id column and its dataset texts. The South Pacific
+datasets differ from the NHC ones in these ways:
+
+- The first column is `storm_id`, the FMS disturbance id (for example
+  `2526-11F`), because these storms have no ATCF id. The other columns are the
+  same as in the NHC files. The NHC files keep `atcf_id`.
+- The figures come from CHD's own calculation only: the population inside the
+  34, 50 and 64 kt wind areas along the FMS official forecast and observed
+  track. There are no GDACS or ADAM figures for this basin, so the `sources_*`
+  columns hold `CHD` or nothing and the `caveat_*` columns are empty.
+- Wind speeds are 10-minute means, as FMS reports them. NHC winds are 1-minute.
+- Wind areas are drawn at true ground distance, and admin units extend 500 m
+  offshore so that people on coasts and atolls are counted.
+- Kiribati is not covered: the population grid has no data for it.
+- The season runs from July to June and is shown as two years, for example
+  `2026/27`.
+- `is_final_alert` is set once the storm's latest forecast, including its
+  track-uncertainty range, no longer puts people in the country, or once FMS
+  has issued no forecast for the storm for 24 hours.
+- FMS numbers a disturbance before it names it, so a storm can be published
+  under its id and get its name a few forecasts later. The dataset name (its
+  URL) is therefore built from the basin, season and id only, for example
+  `storm-south-pacific-2026-27-2627-03f`, and stays the same. So is the
+  resource file name, for example `storm_exposure_2627_03f.csv`, so that its
+  download link does not change either. The title takes the storm's name once
+  it has one.
+
+Until the South Pacific alert launches, its export writes to a test prefix and
+there is no manifest at the path above. The `sp` entry therefore has
+`required: false`: a missing manifest is logged and skipped. Set it to `true`
+once the export is live, so that a missing manifest fails the run as it does
+for NHC.
+
 ### Scheduling
 
-The pipeline is meant to run 30 minutes after each Databricks export (the cron
-in `.github/workflows/run-python-script.yaml`, commented out until go-live) and
-overwrites every dataset in the manifest. If the manifest is more than 6 hours
-old (the export missed an advisory), the run fails without publishing; set
+The pipeline runs 30 minutes after each Databricks export (the cron in
+`.github/workflows/run-python-script.yaml`) and overwrites every dataset in
+each manifest. Both exports run on the same schedule. If a manifest is more
+than 6 hours old (the export missed a cycle), that basin's datasets are left
+as they are, the other basin is still published, and the run fails; set
 `FORCE_PUBLISH=true` (the workflow's `force` input) to publish it anyway.
 
 ### Expected update frequency

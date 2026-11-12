@@ -1,0 +1,41 @@
+{
+ "generated_at": "2027-01-14T04:16:40.503112+00:00",
+ "as_of": "2027-01-14T04:00:00",
+ "season": 2027,
+ "basin": "sp",
+ "db_stage": "prod",
+ "columns": [
+  "storm_id",
+  "admin_level",
+  "iso3",
+  "country_name",
+  "admin_pcode",
+  "admin_name",
+  "is_final_alert",
+  "pop_exposed_34kt",
+  "pop_exposed_50kt",
+  "pop_exposed_64kt",
+  "sources_34kt",
+  "sources_50kt",
+  "sources_64kt",
+  "caveat_34kt",
+  "caveat_50kt",
+  "caveat_64kt"
+ ],
+ "storms": [
+  {
+   "storm_id": "2627-03F",
+   "name": "EXAMPLE",
+   "season": 2027,
+   "issued_time": "2027-01-14T00:00:00",
+   "blob": "ds-storms-alerts/processed/hdx_sp/2027-01-14T04/2627-03f.csv",
+   "n_rows": 4,
+   "iso3s": [
+    "FJI",
+    "TON"
+   ],
+   "all_final": false
+  }
+ ],
+ "failed": []
+}

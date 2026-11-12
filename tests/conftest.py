@@ -36,6 +36,8 @@ def configuration(config_dir):
         [
             {"name": "usa", "title": "United States of America"},
             {"name": "nic", "title": "Nicaragua"},
+            {"name": "fji", "title": "Fiji"},
+            {"name": "ton", "title": "Tonga"},
         ]
     )
     Country.countriesdata(False)
@@ -53,16 +55,28 @@ def configuration(config_dir):
     return Configuration.read()
 
 
+@pytest.fixture(scope="session")
+def nhc(configuration):
+    return configuration["basins"]["nhc"]
+
+
+@pytest.fixture(scope="session")
+def sp(configuration):
+    return configuration["basins"]["sp"]
+
+
 @pytest.fixture
 def blob_fixtures(monkeypatch, input_dir):
-    """Serve the export's blobs from tests/fixtures/input: the manifest
+    """Serve the exports' blobs from tests/fixtures/input: the manifest
     (manifest.json) and each storm's CSV (<atcf_id>.csv, from a real export of
     the prod storms database), through the same stratus calls the pipeline
-    makes against the dev storage account."""
+    makes against the dev storage account. The South Pacific export's blobs
+    are under sp/: a made-up storm, written in that export's layout."""
     import ocha_stratus as stratus
 
     def _path(blob):
-        return join(input_dir, blob.rsplit("/", 1)[-1])
+        folder = join(input_dir, "sp") if "/hdx_sp/" in blob else input_dir
+        return join(folder, blob.rsplit("/", 1)[-1])
 
     def _load_blob_data(blob, stage="dev", container_name="projects"):
         with open(_path(blob), "rb") as f:

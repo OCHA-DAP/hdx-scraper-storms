@@ -1,7 +1,5 @@
 license_id: cc-by
 methodology: Other
-methodology_other: Modeled population exposure combining NHC storm forecast/observed track buffers with GDACS/ADAM exposure data
-caveats: Admin1 units are identified using FieldMaps p-codes
 dataset_source: OCHA Data Science storms database
 package_creator: HDX Data Systems Team
 private: False
