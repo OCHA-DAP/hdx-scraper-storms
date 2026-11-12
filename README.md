@@ -67,8 +67,10 @@ datasets differ from the NHC ones in these ways:
 - FMS numbers a disturbance before it names it, so a storm can be published
   under its id and get its name a few forecasts later. The dataset name (its
   URL) is therefore built from the basin, season and id only, for example
-  `storm-south-pacific-2026-27-2627-03f`, and stays the same. The title and
-  the resource file name take the storm's name once it has one.
+  `storm-south-pacific-2026-27-2627-03f`, and stays the same. So is the
+  resource file name, for example `storm_exposure_2627_03f.csv`, so that its
+  download link does not change either. The title takes the storm's name once
+  it has one.
 
 Until the South Pacific alert launches, its export writes to a test prefix and
 there is no manifest at the path above. The `sp` entry therefore has

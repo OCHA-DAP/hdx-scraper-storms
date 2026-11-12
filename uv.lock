@@ -857,6 +857,7 @@ wheels = [
 name = "hdx-scraper-storms"
 source = { editable = "." }
 dependencies = [
+    { name = "azure-core" },
     { name = "hdx-python-api" },
     { name = "hdx-python-country" },
     { name = "hdx-python-utilities" },
@@ -874,6 +875,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "azure-core" },
     { name = "hdx-python-api" },
     { name = "hdx-python-country" },
     { name = "hdx-python-utilities" },

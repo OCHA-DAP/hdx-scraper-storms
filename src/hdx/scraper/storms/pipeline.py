@@ -235,9 +235,14 @@ class Pipeline:
             )
             return None
 
-        storm_slug = slugify(storm_label, separator="_")
         id_slug = slugify(storm_id, separator="_")
-        resource_name = f"storm_exposure_{storm_slug}_{id_slug}.csv"
+        if basin.get("name_by_id"):
+            # As for the dataset name: HDX matches resources by name, so a
+            # renamed file would replace the resource and break its links.
+            resource_name = f"storm_exposure_{id_slug}.csv"
+        else:
+            storm_slug = slugify(storm_label, separator="_")
+            resource_name = f"storm_exposure_{storm_slug}_{id_slug}.csv"
         resourcedata = {
             "name": resource_name,
             "description": basin["resource_description"],

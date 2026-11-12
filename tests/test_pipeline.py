@@ -113,7 +113,7 @@ class TestPipeline:
         assert "Kiribati" in dataset["caveats"]
         assert dataset["data_update_frequency"] == "1"
         assert {g["name"] for g in dataset["groups"]} == {"fji", "ton"}
-        assert resource["name"] == "storm_exposure_example_2627_03f.csv"
+        assert resource["name"] == "storm_exposure_2627_03f.csv"
         assert "Fiji Meteorological Service" in resource["description"]
         assert header == csv_columns(sp)
 
@@ -298,6 +298,5 @@ class TestPipeline:
             "Fiji - Storm 2627-05F (2026/27) Population Exposure"
         )
         assert dataset["data_update_frequency"] == "-1"
-        assert dataset.get_resources()[0]["name"] == (
-            "storm_exposure_2627_05f_2627_05f.csv"
-        )
+        assert dataset.get_resources()[0]["name"] == "storm_exposure_2627_05f.csv"
+        assert named.get_resources()[0]["name"] == "storm_exposure_2627_05f.csv"
